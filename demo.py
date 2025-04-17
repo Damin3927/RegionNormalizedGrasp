@@ -1,90 +1,149 @@
+"""
+Region Normalized Grasp (RNG) Demo Script
+
+This script demonstrates 6D grasp detection using the Region Normalized Grasp approach.
+It takes RGB and depth images as input and outputs 6D grasp poses suitable for robotic manipulation.
+
+The pipeline consists of two main networks:
+1. AnchorNet: Detects initial 2D grasp candidates from RGB-D images
+2. PatchMultiGraspNet: Refines 2D candidates to 6D grasp poses using local patch features
+
+The demo supports two modes:
+- Automatic mode (use_heatmap=True): Uses heat map-based grasp candidate detection
+- Manual mode (use_heatmap=False): Allows user to click points of interest for grasp detection
+
+Usage:
+    python demo.py --checkpoint-path PATH_TO_CHECKPOINT --rgb-path PATH_TO_RGB 
+                  --depth-path PATH_TO_DEPTH --center-num 20 --anchor-num 7 --embed-dim 64
+"""
+
 import argparse
 import os
 import random
 from time import time
 
 import numpy as np
-import open3d as o3d
+import open3d as o3d  # For 3D visualization
 import torch
 import torch.nn.functional as F
 from matplotlib import pyplot as plt
 from PIL import Image
-from thop import clever_format, profile
+from thop import clever_format, profile  # For model complexity analysis
 import cv2
 
-from dataset.config import get_camera_intrinsic
-from dataset.evaluation import (anchor_output_process, collision_detect,
+from rng.dataset.config import get_camera_intrinsic
+from rng.dataset.evaluation import (anchor_output_process, collision_detect,
                                 detect_2d_grasp, detect_6d_grasp_multi,
                                 get_thetas_widths)
-from dataset.pc_dataset_tools import center2dtopc
-from dataset.grasp import RectGraspGroup
-from models.anchornet import AnchorGraspNet
-from models.localgraspnet import PatchMultiGraspNet
+from rng.dataset.pc_dataset_tools import center2dtopc
+from rng.dataset.grasp import RectGraspGroup
+from rng.models.anchornet import AnchorGraspNet
+from rng.models.localgraspnet import PatchMultiGraspNet
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--checkpoint-path', default=None)
+parser = argparse.ArgumentParser(description='Region Normalized Grasp (RNG) detection demo')
 
-# image input
-parser.add_argument('--rgb-path')
-parser.add_argument('--depth-path')
+# Model path parameters
+parser.add_argument('--checkpoint-path', default=None, 
+                   help='Path to the pretrained model checkpoint')
 
-# paras from hggd (some are useless but not deleted for convinence)
-parser.add_argument('--input-h', type=int, default=360)
-parser.add_argument('--input-w', type=int, default=640)
-parser.add_argument('--sigma', type=int, default=10)
-parser.add_argument('--ratio', type=int, default=8)
-parser.add_argument('--anchor-k', type=int, default=6)
-parser.add_argument('--hggd-anchor-w', type=float, default=75.0)
-parser.add_argument('--anchor-z', type=float, default=20.0)
-parser.add_argument('--grid-size', type=int, default=12)
+# Input image parameters
+parser.add_argument('--rgb-path', help='Path to the RGB input image')
+parser.add_argument('--depth-path', help='Path to the corresponding depth image')
 
-# pc
-parser.add_argument('--all-points-num', type=int, default=25600)
-parser.add_argument('--center-num', type=int)
-parser.add_argument('--group-num', type=int)
+# Image processing parameters
+parser.add_argument('--input-h', type=int, default=360,
+                   help='Input height for network processing')
+parser.add_argument('--input-w', type=int, default=640,
+                   help='Input width for network processing')
+parser.add_argument('--sigma', type=int, default=10,
+                   help='Gaussian sigma for heatmap generation in 2D detection')
+parser.add_argument('--ratio', type=int, default=8,
+                   help='Downsampling ratio for feature maps')
+parser.add_argument('--anchor-k', type=int, default=6,
+                   help='Number of discrete grasp orientation angles')
+parser.add_argument('--hggd-anchor-w', type=float, default=75.0,
+                   help='Default anchor width for 2D grasp detection (pixels)')
+parser.add_argument('--anchor-z', type=float, default=20.0,
+                   help='Default anchor depth for initial grasp candidates (mm)')
+parser.add_argument('--grid-size', type=int, default=12,
+                   help='Grid size for grasp sampling and NMS')
 
-# patch
-parser.add_argument('--patch-size',
-                    type=int,
-                    default=64,
-                    help='local patch grid size')
-parser.add_argument('--alpha',
-                    type=float,
-                    default=0.02,
-                    help='grasp center crop range')
+# Point cloud processing parameters
+parser.add_argument('--all-points-num', type=int, default=25600,
+                   help='Maximum number of points to sample from point cloud')
+parser.add_argument('--center-num', type=int, 
+                   help='Number of grasp center candidates to consider')
+parser.add_argument('--group-num', type=int,
+                   help='Number of point groups for local feature extraction')
 
-# net
-parser.add_argument('--embed-dim', type=int)
-parser.add_argument('--anchor-w', type=float, default=60.0)
-parser.add_argument('--anchor-num', type=int, default=7)
+# Local patch parameters
+parser.add_argument('--patch-size', type=int, default=64,
+                   help='Grid size for local patch extraction')
+parser.add_argument('--alpha', type=float, default=0.02,
+                   help='Adaptive radius factor for local patch extraction')
 
-# grasp detection
-parser.add_argument('--heatmap-thres', type=float, default=0.01)
-parser.add_argument('--local-k', type=int, default=10)
-parser.add_argument('--local-thres', type=float, default=0.01)
-parser.add_argument('--rotation-num', type=int, default=1)
+# Network parameters
+parser.add_argument('--embed-dim', type=int,
+                   help='Embedding dimension for feature extraction')
+parser.add_argument('--anchor-w', type=float, default=60.0,
+                   help='Physical width of gripper for grasp detection (mm)')
+parser.add_argument('--anchor-num', type=int, default=7,
+                   help='Number of discrete approach and rotation anchors')
 
-# others
-parser.add_argument('--random-seed', type=int, default=123, help='Random seed')
+# Grasp detection parameters
+parser.add_argument('--heatmap-thres', type=float, default=0.01,
+                   help='Threshold for heatmap-based grasp candidates')
+parser.add_argument('--local-k', type=int, default=10,
+                   help='Number of top local grasp candidates to keep')
+parser.add_argument('--local-thres', type=float, default=0.01,
+                   help='Score threshold for local grasp candidates')
+parser.add_argument('--rotation-num', type=int, default=1,
+                   help='Number of rotation candidates to consider')
+
+# Other parameters
+parser.add_argument('--random-seed', type=int, default=123, 
+                   help='Random seed for reproducibility')
 
 args = parser.parse_args()
 
+# Small epsilon to avoid numerical issues
 eps = 1e-6
 
 
 class PointCloudHelper:
+    """
+    Helper class for processing RGB-D images into 3D point cloud representations.
+    
+    This class handles the conversion of RGB-D images to point clouds, including
+    back-projecting 2D pixels to 3D points using camera intrinsic parameters.
+    It provides utilities for point cloud sampling and feature extraction.
+    """
 
-    def __init__(self, all_points_num) -> None:
-        # precalculate x,y map
+    def __init__(self, all_points_num: int) -> None:
+        """
+        Initialize the PointCloudHelper with camera parameters.
+        
+        Args:
+            all_points_num (int): Maximum number of points to sample from the point cloud
+        """
+        # Set maximum number of points to sample from the point cloud
         self.all_points_num = all_points_num
-        # get intrinsics
+        
+        # Get camera intrinsic parameters (focal lengths and principal point)
         intrinsics = get_camera_intrinsic()
-        fx, fy = intrinsics[0, 0], intrinsics[1, 1]
-        cx, cy = intrinsics[0, 2], intrinsics[1, 2]
-        # cal x, y
+        fx, fy = intrinsics[0, 0], intrinsics[1, 1]  # Focal lengths
+        cx, cy = intrinsics[0, 2], intrinsics[1, 2]  # Principal point coordinates
+        
+        # Create 2D coordinate maps for original image resolution (1280x720)
+        # These maps are used for back-projection from 2D to 3D
         ymap, xmap = np.meshgrid(np.arange(720), np.arange(1280))
+        
+        # Convert pixel coordinates to normalized camera coordinates
+        # Using pinhole camera model: (x-cx)/fx, (y-cy)/fy
         points_x = (xmap - cx) / fx
         points_y = (ymap - cy) / fy
+        
+        # Store as PyTorch tensors for GPU processing
         self.points_x = torch.from_numpy(points_x).float()
         self.points_y = torch.from_numpy(points_y).float()
 
@@ -92,35 +151,60 @@ class PointCloudHelper:
                         rgbs: torch.Tensor,
                         depths: torch.Tensor,
                         include_rgb=True):
+        """
+        Convert RGB-D images to 3D point clouds with color information.
+        
+        This method backprojects 2D depth images into 3D space using the camera intrinsics,
+        and optionally adds RGB color information to each point.
+        
+        Args:
+            rgbs (torch.Tensor): Batch of RGB images [B, 3, H, W]
+            depths (torch.Tensor): Batch of depth images [B, H, W]
+            include_rgb (bool): Whether to include RGB color information
+            
+        Returns:
+            tuple:
+                - points_all (torch.Tensor): Batch of point clouds [B, all_points_num, 3+3*include_rgb]
+                - idxs (list): Indices of sampled points for each batch item
+                - masks (torch.Tensor): Masks indicating valid depth values
+        """
         batch_size = rgbs.shape[0]
+        # Number of features per point: XYZ + optional RGB
         feature_len = 3 + 3 * include_rgb
+        # Initialize point cloud tensor with placeholder values (-1)
         points_all = -torch.ones(
             (batch_size, self.all_points_num, feature_len),
             dtype=torch.float32).cuda()
-        # cal z
+        
+        # Calculate 3D coordinates from depth values
         idxs = []
+        # Create mask for valid depth values (depth > 0)
         masks = (depths > 0)
+        # Convert depth from mm to meters
         cur_zs = depths / 1000.0
+        # Compute X and Y coordinates using normalized coordinates and depth
         cur_xs = self.points_x.cuda() * cur_zs
         cur_ys = self.points_y.cuda() * cur_zs
         for i in range(batch_size):
-            # convert point cloud to xyz maps
+            # Stack XYZ coordinates for this batch item
             points = torch.stack([cur_xs[i], cur_ys[i], cur_zs[i]], axis=-1)
-            # remove zero depth
+            # Filter out points with invalid depth (zero depth pixels)
             mask = masks[i]
             points = points[mask]
+            # Extract RGB values for valid points
             colors = rgbs[i][:, mask].T
 
-            # random sample if points more than required
+            # Randomly sample points if we have more than required
+            # This keeps the point cloud size manageable
             if len(points) >= self.all_points_num:
                 cur_idxs = random.sample(range(len(points)),
                                          self.all_points_num)
                 points = points[cur_idxs]
                 colors = colors[cur_idxs]
-                # save idxs for concat fusion
+                # Save indices for potential feature fusion later
                 idxs.append(cur_idxs)
 
-            # concat rgb and features after translation
+            # Combine geometric (XYZ) and appearance (RGB) features
             if include_rgb:
                 points_all[i] = torch.concat([points, colors], axis=1)
             else:
@@ -128,11 +212,26 @@ class PointCloudHelper:
         return points_all, idxs, masks
 
     def to_xyz_maps(self, depths):
-        # convert xyzs
+        """
+        Convert depth images to XYZ feature maps.
+        
+        This method creates dense 3D coordinate maps where each pixel contains the 
+        corresponding 3D coordinate. These maps are used for local patch extraction.
+        
+        Args:
+            depths (torch.Tensor): Batch of depth images [B, H, W]
+            
+        Returns:
+            torch.Tensor: XYZ feature maps [B, 3, H, W]
+        """
+        # Convert depth from mm to meters
         cur_zs = depths / 1000.0
+        # Calculate X and Y coordinates using normalized camera coordinates and depth
         cur_xs = self.points_x.cuda() * cur_zs
         cur_ys = self.points_y.cuda() * cur_zs
+        # Stack coordinates to create XYZ feature maps
         xyzs = torch.stack([cur_xs, cur_ys, cur_zs], axis=-1)
+        # Rearrange dimensions to standard PyTorch format [B, C, H, W]
         return xyzs.permute(0, 3, 1, 2)
 
 
@@ -144,15 +243,48 @@ def inference(view_points,
               use_heatmap=False,
               vis_heatmap=False,
               vis_grasp=True):
+    """
+    Perform the complete 6D grasp detection pipeline.
+    
+    This function implements the Region Normalized Grasp (RNG) approach:
+    1. First detects 2D grasp candidates using either a heatmap (AnchorNet) or manual selection
+    2. Converts 2D grasp candidates to 3D centers
+    3. Extracts local patches around each grasp center
+    4. Uses PatchMultiGraspNet to predict 6D grasp poses from local patches
+    5. Performs collision detection and non-maximum suppression
+    
+    Args:
+        view_points (torch.Tensor): Point cloud with XYZ+RGB values
+        rgbd (torch.Tensor): Combined RGB+XYZ tensor for feature extraction
+        x (torch.Tensor): Input tensor for AnchorNet [B, 4, H, W]
+        ori_rgb (torch.Tensor): Original RGB image
+        ori_depth (torch.Tensor): Original depth image
+        use_heatmap (bool): Whether to use heatmap-based detection (True) or manual selection (False)
+        vis_heatmap (bool): Whether to visualize grasp heatmaps
+        vis_grasp (bool): Whether to visualize final 6D grasp poses
+        
+    Returns:
+        pred_gg: Final 6D grasp predictions after filtering and NMS
+    """
     with torch.no_grad():
         if use_heatmap:
-            # 2d prediction
+            # STEP 1: Initial 2D grasp candidate detection using AnchorNet
+            # Run AnchorNet to get 2D grasp predictions from RGB-D input
+            # pred_2d contains various feature maps for grasp detection
             pred_2d, _ = anchornet(x)
 
+            # Process AnchorNet outputs into usable grasp parameters
+            # - loc_map: Grasp quality/confidence heatmap
+            # - cls_mask: Classification mask for grasp presence
+            # - theta_offset: Rotation angle offset for each pixel
+            # - height_offset: Gripper height offset for each pixel
+            # - width_offset: Gripper width offset for each pixel
             loc_map, cls_mask, theta_offset, height_offset, width_offset = \
                 anchor_output_process(*pred_2d, sigma=args.sigma)
 
-            # detect 2d grasp (x, y, theta)
+            # Detect 2D rectangular grasps (x, y, θ, height, width)
+            # This function identifies the best grasp candidates from the feature maps
+            # and performs non-maximum suppression to avoid overlapping grasps
             rect_gg = detect_2d_grasp(loc_map,
                                       cls_mask,
                                       theta_offset,

@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rng"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+authors = []
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.23.5",
+    "pandas",
+    "matplotlib",
+    "open3d",
+    "opencv-python",
+    "scikit-image",
+    "tensorboardX",
+    "torchsummary",
+    "tqdm",
+    "grasp_nms",
+    "transforms3d",
+    "trimesh",
+    "autolab_core",
+    "cvxopt",
+    "numba",
+    "torch>=2.6.0",
+    "thop>=0.1.1.post2209072238",
+]
+
+[project.optional-dependencies]
+dev = [
+    "cupoch",
+]
+
+[tool.setuptools]
+packages = ["rng", "rng.models", "rng.dataset", "rng.customgraspnetAPI"]
+
+[tool.setuptools.package-data]
+"*" = ["*.py"]
