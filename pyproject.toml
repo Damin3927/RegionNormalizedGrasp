@@ -26,7 +26,7 @@ dependencies = [
     "autolab_core",
     "cvxopt",
     "numba",
-    "torch>=2.6.0",
+    "torch>=1.10.0",
     "thop>=0.1.1.post2209072238",
 ]
 
