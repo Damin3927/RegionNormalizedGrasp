@@ -8,7 +8,7 @@ version = "0.1.0"
 description = ""
 readme = "README.md"
 authors = []
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = [
     "cupoch",
@@ -32,7 +32,17 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["rng", "rng.models", "rng.dataset", "rng.customgraspnetAPI", "rng.customgraspnetAPI.utils", "rng.customgraspnetAPI.grasp"]
+packages = [
+    "rng",
+    "rng.models",
+    "rng.dataset",
+    "rng.customgraspnetAPI",
+    "rng.customgraspnetAPI.utils",
+    "rng.customgraspnetAPI",
+    "rng.customgraspnetAPI.utils.dexnet",
+    "rng.customgraspnetAPI.utils.dexnet.grasping",
+    "rng.customgraspnetAPI.utils.dexnet.grasping.meshpy",
+]
 
 [tool.setuptools.package-data]
 "*" = ["*.py"]
