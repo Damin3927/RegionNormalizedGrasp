@@ -9,8 +9,8 @@ import torch.nn.functional as F
 from torchvision.transforms.functional import rotate
 from matplotlib import pyplot as plt
 from numba import njit
-from pytorch3d.ops import ball_query, knn_points, sample_farthest_points
-from pytorch3d.ops.utils import masked_gather
+# from pytorch3d.ops import ball_query, knn_points, sample_farthest_points
+# from pytorch3d.ops.utils import masked_gather
 from scipy import interpolate
 from skimage.feature import peak_local_max
 

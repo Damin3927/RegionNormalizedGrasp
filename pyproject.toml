@@ -29,7 +29,6 @@ dependencies = [
     "numba",
     "torch>=1.10.0",
     "thop>=0.1.1.post2209072238",
-    "pytorch3d",
 ]
 
 [tool.setuptools]

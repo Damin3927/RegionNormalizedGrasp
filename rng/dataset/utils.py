@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from numba import jit
-from pytorch3d.transforms import euler_angles_to_matrix, matrix_to_quaternion
+# from pytorch3d.transforms import euler_angles_to_matrix, matrix_to_quaternion
 
 from .config import get_camera_intrinsic
 
