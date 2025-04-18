@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["rng", "rng.models", "rng.dataset", "rng.customgraspnetAPI"]
+packages = ["rng", "rng.models", "rng.dataset", "rng.customgraspnetAPI", "rng.customgraspnetAPI.utils", "rng.customgraspnetAPI.grasp"]
 
 [tool.setuptools.package-data]
 "*" = ["*.py"]
