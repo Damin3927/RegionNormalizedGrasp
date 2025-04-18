@@ -8,7 +8,7 @@ from numba import jit, njit
 from scipy.signal import medfilt2d
 from torchvision.transforms.functional import gaussian_blur
 
-from dataset.collision_detector import ModelFreeCollisionDetector
+from .collision_detector import ModelFreeCollisionDetector
 
 from .config import get_camera_intrinsic
 from .grasp import GraspGroup, RectGrasp, RectGraspGroup

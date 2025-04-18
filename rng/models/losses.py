@@ -9,7 +9,7 @@ from numba import njit, prange
 from numba.typed import List as typed_List
 from torch.autograd import Variable
 
-from dataset.utils import angle_distance, rotation_distance
+from rng.dataset.utils import angle_distance, rotation_distance
 
 eps = 1e-6
 

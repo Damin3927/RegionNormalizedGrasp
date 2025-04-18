@@ -9,8 +9,8 @@ import numpy as np
 import open3d as o3d
 from skimage.draw import polygon
 
-from customgraspnetAPI.grasp import Grasp as GraspNetGrasp
-from customgraspnetAPI.grasp import GraspGroup as GraspNetGraspGroup
+from rng.customgraspnetAPI.grasp import Grasp as GraspNetGrasp
+from rng.customgraspnetAPI.grasp import GraspGroup as GraspNetGraspGroup
 
 from .config import get_camera_intrinsic
 from .graspnet_utils import (get_2d_key_points, get_6d_key_points,

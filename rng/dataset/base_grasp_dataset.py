@@ -10,7 +10,7 @@ import torch
 from PIL import Image
 from skimage.draw import polygon
 
-from dataset.grasp import RectGraspGroup
+from .grasp import RectGraspGroup
 
 from .config import camera
 
