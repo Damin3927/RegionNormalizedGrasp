@@ -27,7 +27,6 @@ import time
 from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 
-import IPython
 import matplotlib.pyplot as plt
 import numpy as np
 from autolab_core import Point, RigidTransform

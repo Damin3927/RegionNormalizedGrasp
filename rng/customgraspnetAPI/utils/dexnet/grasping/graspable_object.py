@@ -27,7 +27,6 @@ import copy
 import logging
 from abc import ABCMeta, abstractmethod
 
-import IPython
 import matplotlib.pyplot as plt
 import numpy as np
 from autolab_core import RigidTransform, SimilarityTransform

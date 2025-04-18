@@ -40,7 +40,6 @@ import os
 import sys
 import time
 
-import IPython
 import numpy as np
 
 
