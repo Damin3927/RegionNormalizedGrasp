@@ -195,7 +195,9 @@ def center2dtopc(rect_ggs: List,
     batch_size = depths.shape[0]
     center_batch_pc = []
 
-    scale_x, scale_y = 1280 / output_size[0], 720 / output_size[1]
+    # scale_x, scale_y = 1280 / output_size[0], 720 / output_size[1]
+    scale_x = depths.shape[-1] / output_size[0]
+    scale_y = depths.shape[-2] / output_size[1]
     for i in range(batch_size):  # batch_size=1 for generating local data
         center_2d = rect_ggs[i].centers.copy()
         # add random center when local max count not enough
